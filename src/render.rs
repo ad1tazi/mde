@@ -19,6 +19,17 @@ impl<'a> Widget for EditorWidget<'a> {
         let viewport_width = area.width as usize;
         let scroll = self.editor.scroll_offset;
 
+        // Compute visible line range and syntax highlights
+        let visible_start = scroll;
+        let visible_end = (scroll + viewport_height).min(self.editor.buffer.len_lines());
+        let cursor_byte = self.editor.cursor_byte_offset();
+        let highlights = self.editor.markdown.compute_highlights(
+            &self.editor.buffer,
+            visible_start,
+            visible_end,
+            cursor_byte,
+        );
+
         for screen_row in 0..viewport_height {
             let line_idx = scroll + screen_row;
             if line_idx >= self.editor.buffer.len_lines() {
@@ -33,12 +44,17 @@ impl<'a> Widget for EditorWidget<'a> {
             }
 
             let line = self.editor.buffer.line(line_idx);
+            let line_byte_start = self.editor.buffer.line_to_byte(line_idx);
             let mut display_col: usize = 0;
+            let mut byte_offset_in_line: usize = 0;
 
             for (char_idx, ch) in line.chars().enumerate() {
                 if ch == '\n' {
                     break;
                 }
+
+                let ch_byte_len = ch.len_utf8();
+                let abs_byte = line_byte_start + byte_offset_in_line;
 
                 let ch_width = if ch == '\t' {
                     4 - (display_col % 4)
@@ -50,15 +66,18 @@ impl<'a> Widget for EditorWidget<'a> {
                     break;
                 }
 
-                // Determine style (selection highlighting)
+                // Base style from syntax highlighting
+                let hl_style = highlights.style_at(abs_byte);
+
+                // Selection overrides highlight style
                 let style = if let Some(ref sel) = self.editor.selection {
                     if sel.contains(line_idx, char_idx, &self.editor.buffer) {
                         Style::default().bg(Color::Indexed(24)).fg(Color::White)
                     } else {
-                        Style::default()
+                        hl_style
                     }
                 } else {
-                    Style::default()
+                    hl_style
                 };
 
                 if ch == '\t' {
@@ -83,6 +102,7 @@ impl<'a> Widget for EditorWidget<'a> {
                 }
 
                 display_col += ch_width;
+                byte_offset_in_line += ch_byte_len;
             }
         }
     }

@@ -2,6 +2,7 @@ mod app;
 mod clipboard;
 mod editor;
 mod input;
+mod markdown;
 mod render;
 
 use app::App;
