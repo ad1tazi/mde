@@ -11,6 +11,7 @@ use selection::Selection;
 use undo::UndoStack;
 
 use crate::clipboard::Clipboard;
+use crate::markdown::{self, MarkdownState};
 
 pub struct Editor {
     pub buffer: Buffer,
@@ -20,23 +21,30 @@ pub struct Editor {
     pub file_path: Option<PathBuf>,
     pub dirty: bool,
     pub scroll_offset: usize,
+    pub markdown: MarkdownState,
 }
 
 impl Editor {
     pub fn new() -> Self {
+        let buffer = Buffer::new();
+        let mut markdown = MarkdownState::new();
+        markdown.parse_full(&buffer);
         Self {
-            buffer: Buffer::new(),
+            buffer,
             cursor: Cursor::new(),
             selection: None,
             undo_stack: UndoStack::new(),
             file_path: None,
             dirty: false,
             scroll_offset: 0,
+            markdown,
         }
     }
 
     pub fn open_file(path: &std::path::Path) -> std::io::Result<Self> {
         let buffer = Buffer::from_file(path)?;
+        let mut markdown = MarkdownState::new();
+        markdown.parse_full(&buffer);
         Ok(Self {
             buffer,
             cursor: Cursor::new(),
@@ -45,7 +53,12 @@ impl Editor {
             file_path: Some(path.to_path_buf()),
             dirty: false,
             scroll_offset: 0,
+            markdown,
         })
+    }
+
+    pub fn cursor_byte_offset(&self) -> usize {
+        self.buffer.line_col_to_byte(self.cursor.line, self.cursor.col)
     }
 
     // --- Editing ---
@@ -53,6 +66,7 @@ impl Editor {
     pub fn insert_char(&mut self, ch: char) {
         self.delete_selection_if_active();
         let cursor_before = self.cursor.position();
+        let char_pos = self.buffer.line_col_to_char_idx(self.cursor.line, self.cursor.col);
         let op = self.buffer.insert_char(self.cursor.line, self.cursor.col, ch);
         if ch == '\n' {
             self.cursor.line += 1;
@@ -61,6 +75,11 @@ impl Editor {
             self.cursor.col += 1;
         }
         self.cursor.reset_desired_col();
+
+        let text = ch.to_string();
+        let edit = markdown::input_edit_for_insert(&self.buffer, char_pos, &text);
+        self.markdown.apply_edit(edit, &self.buffer);
+
         let cursor_after = self.cursor.position();
         self.undo_stack.record(op, cursor_before, cursor_after);
         self.dirty = true;
@@ -75,13 +94,21 @@ impl Editor {
             return;
         }
         let cursor_before = self.cursor.position();
-        if let Some(op) = self
+        let char_pos = self.buffer.line_col_to_char_idx(self.cursor.line, self.cursor.col);
+        if let Some(ref op) = self
             .buffer
             .delete_char_forward(self.cursor.line, self.cursor.col)
         {
+            let deleted_text = match op {
+                undo::Operation::Delete { text, .. } => text.clone(),
+                _ => unreachable!(),
+            };
+            let edit = markdown::input_edit_for_delete(&self.buffer, char_pos, &deleted_text);
+            self.markdown.apply_edit(edit, &self.buffer);
+
             self.cursor.clamp(&self.buffer);
             let cursor_after = self.cursor.position();
-            self.undo_stack.record(op, cursor_before, cursor_after);
+            self.undo_stack.record(op.clone(), cursor_before, cursor_after);
             self.dirty = true;
         }
     }
@@ -105,15 +132,24 @@ impl Editor {
             new_col = self.buffer.line_len_chars(self.cursor.line - 1);
         }
 
-        if let Some(op) = self
+        if let Some(ref op) = self
             .buffer
             .delete_char_backward(self.cursor.line, self.cursor.col)
         {
+            let deleted_text = match op {
+                undo::Operation::Delete { text, .. } => text.clone(),
+                _ => unreachable!(),
+            };
+            // char_pos after deletion is the position where the char was removed
+            let char_pos = self.buffer.line_col_to_char_idx(new_line, new_col);
+            let edit = markdown::input_edit_for_delete(&self.buffer, char_pos, &deleted_text);
+            self.markdown.apply_edit(edit, &self.buffer);
+
             self.cursor.line = new_line;
             self.cursor.col = new_col;
             self.cursor.reset_desired_col();
             let cursor_after = self.cursor.position();
-            self.undo_stack.record(op, cursor_before, cursor_after);
+            self.undo_stack.record(op.clone(), cursor_before, cursor_after);
             self.dirty = true;
         }
     }
@@ -125,13 +161,21 @@ impl Editor {
             }
             let (start, end) = sel.ordered();
             let cursor_before = self.cursor.position();
-            if let Some(op) = self.buffer.delete_range(start, end) {
+            let char_pos = self.buffer.line_col_to_char_idx(start.0, start.1);
+            if let Some(ref op) = self.buffer.delete_range(start, end) {
+                let deleted_text = match op {
+                    undo::Operation::Delete { text, .. } => text.clone(),
+                    _ => unreachable!(),
+                };
+                let edit = markdown::input_edit_for_delete(&self.buffer, char_pos, &deleted_text);
+                self.markdown.apply_edit(edit, &self.buffer);
+
                 self.cursor.line = start.0;
                 self.cursor.col = start.1;
                 self.cursor.reset_desired_col();
                 let cursor_after = self.cursor.position();
                 self.undo_stack.seal();
-                self.undo_stack.record(op, cursor_before, cursor_after);
+                self.undo_stack.record(op.clone(), cursor_before, cursor_after);
                 self.undo_stack.seal();
                 self.dirty = true;
             }
@@ -291,9 +335,13 @@ impl Editor {
         }
         self.delete_selection_if_active();
         let cursor_before = self.cursor.position();
+        let char_pos = self.buffer.line_col_to_char_idx(self.cursor.line, self.cursor.col);
         let op = self
             .buffer
             .insert_str(self.cursor.line, self.cursor.col, &text);
+
+        let edit = markdown::input_edit_for_insert(&self.buffer, char_pos, &text);
+        self.markdown.apply_edit(edit, &self.buffer);
 
         // Move cursor to end of pasted text
         let (end_line, end_col) = self.buffer.char_idx_to_line_col(
@@ -322,6 +370,7 @@ impl Editor {
             self.cursor.line = group.cursor_before.0;
             self.cursor.col = group.cursor_before.1;
             self.cursor.reset_desired_col();
+            self.markdown.parse_full(&self.buffer);
             self.dirty = true;
         }
     }
@@ -335,6 +384,7 @@ impl Editor {
             self.cursor.line = group.cursor_after.0;
             self.cursor.col = group.cursor_after.1;
             self.cursor.reset_desired_col();
+            self.markdown.parse_full(&self.buffer);
             self.dirty = true;
         }
     }

@@ -168,6 +168,29 @@ impl Buffer {
         }
     }
 
+    // --- Byte-level conversions (for tree-sitter interop) ---
+
+    pub fn char_to_byte(&self, char_idx: usize) -> usize {
+        self.rope.char_to_byte(char_idx)
+    }
+
+    pub fn byte_to_char(&self, byte_idx: usize) -> usize {
+        self.rope.byte_to_char(byte_idx)
+    }
+
+    pub fn line_col_to_byte(&self, line: usize, col: usize) -> usize {
+        let char_idx = self.line_col_to_char_idx(line, col);
+        self.rope.char_to_byte(char_idx)
+    }
+
+    pub fn len_bytes(&self) -> usize {
+        self.rope.len_bytes()
+    }
+
+    pub fn line_to_byte(&self, line_idx: usize) -> usize {
+        self.rope.line_to_byte(line_idx)
+    }
+
     // --- File I/O ---
 
     pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
@@ -360,6 +383,49 @@ mod tests {
                 assert_eq!((l, c), (line, col));
             }
         }
+    }
+
+    #[test]
+    fn char_to_byte_ascii() {
+        let buf = Buffer::from_str("hello");
+        assert_eq!(buf.char_to_byte(0), 0);
+        assert_eq!(buf.char_to_byte(3), 3);
+        assert_eq!(buf.char_to_byte(5), 5);
+    }
+
+    #[test]
+    fn char_to_byte_multibyte() {
+        let buf = Buffer::from_str("héllo"); // é is 2 bytes in UTF-8
+        assert_eq!(buf.char_to_byte(0), 0); // 'h'
+        assert_eq!(buf.char_to_byte(1), 1); // 'é' starts at byte 1
+        assert_eq!(buf.char_to_byte(2), 3); // 'l' starts at byte 3
+    }
+
+    #[test]
+    fn line_col_to_byte_multiline() {
+        let buf = Buffer::from_str("hello\nworld");
+        assert_eq!(buf.line_col_to_byte(0, 0), 0);
+        assert_eq!(buf.line_col_to_byte(0, 5), 5);
+        assert_eq!(buf.line_col_to_byte(1, 0), 6); // after \n
+        assert_eq!(buf.line_col_to_byte(1, 3), 9);
+    }
+
+    #[test]
+    fn byte_char_roundtrip_multibyte() {
+        let buf = Buffer::from_str("a😀b");
+        // 😀 is 4 bytes in UTF-8
+        assert_eq!(buf.char_to_byte(0), 0); // 'a'
+        assert_eq!(buf.char_to_byte(1), 1); // '😀'
+        assert_eq!(buf.char_to_byte(2), 5); // 'b'
+        assert_eq!(buf.byte_to_char(0), 0);
+        assert_eq!(buf.byte_to_char(1), 1);
+        assert_eq!(buf.byte_to_char(5), 2);
+    }
+
+    #[test]
+    fn len_bytes_multibyte() {
+        let buf = Buffer::from_str("héllo");
+        assert_eq!(buf.len_bytes(), 6); // h(1) + é(2) + l(1) + l(1) + o(1)
     }
 
     #[test]
