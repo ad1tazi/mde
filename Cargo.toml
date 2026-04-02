@@ -1,0 +1,11 @@
+[package]
+name = "mde"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.28"
+ropey = "1.6"
+unicode-width = "0.2"
+arboard = "3"
