@@ -403,28 +403,65 @@ impl Editor {
 
     const SCROLL_MARGIN: usize = 3;
 
+    #[allow(dead_code)]
     pub fn adjust_scroll(&mut self, viewport_height: usize) {
+        self.adjust_scroll_wrapped(viewport_height, |_| 1);
+    }
+
+    /// Adjust scroll offset to keep the cursor visible, accounting for
+    /// wrapped lines. `line_screen_rows` returns how many screen rows
+    /// a given buffer line occupies.
+    pub fn adjust_scroll_wrapped<F>(&mut self, viewport_height: usize, line_screen_rows: F)
+    where
+        F: Fn(usize) -> usize,
+    {
         if viewport_height == 0 {
             return;
         }
 
-        if self.cursor.line < self.scroll_offset.saturating_add(Self::SCROLL_MARGIN) {
-            self.scroll_offset = self.cursor.line.saturating_sub(Self::SCROLL_MARGIN);
+        // Ensure scroll_offset doesn't exceed cursor line
+        if self.scroll_offset > self.cursor.line {
+            self.scroll_offset = self.cursor.line;
         }
 
-        let bottom = self.scroll_offset + viewport_height;
-        if self.cursor.line + Self::SCROLL_MARGIN >= bottom {
-            self.scroll_offset = self
-                .cursor
-                .line
-                .saturating_add(Self::SCROLL_MARGIN + 1)
-                .saturating_sub(viewport_height);
+        // Scroll up to provide SCROLL_MARGIN screen rows above cursor
+        let mut rows_above = 0;
+        for line in self.scroll_offset..self.cursor.line {
+            rows_above += line_screen_rows(line);
+        }
+        if rows_above < Self::SCROLL_MARGIN {
+            while self.scroll_offset > 0 && rows_above < Self::SCROLL_MARGIN {
+                self.scroll_offset -= 1;
+                rows_above += line_screen_rows(self.scroll_offset);
+            }
+        }
+
+        // Scroll down if cursor line (plus margin) doesn't fit in viewport
+        loop {
+            let mut rows_from_scroll = 0;
+            for line in self.scroll_offset..=self.cursor.line {
+                rows_from_scroll += line_screen_rows(line);
+            }
+            // Add margin below: count screen rows for SCROLL_MARGIN lines after cursor
+            let mut margin_below = 0;
+            let mut margin_line = self.cursor.line + 1;
+            let total_lines = self.buffer.len_lines();
+            while margin_line < total_lines && margin_below < Self::SCROLL_MARGIN {
+                margin_below += line_screen_rows(margin_line);
+                margin_line += 1;
+            }
+            let needed = rows_from_scroll + margin_below;
+            if needed <= viewport_height || self.scroll_offset >= self.cursor.line {
+                break;
+            }
+            self.scroll_offset += 1;
         }
 
         let max_scroll = self.buffer.len_lines().saturating_sub(1);
         self.scroll_offset = self.scroll_offset.min(max_scroll);
     }
 
+    #[allow(dead_code)]
     pub fn visible_lines(&self, viewport_height: usize) -> std::ops::Range<usize> {
         let start = self.scroll_offset;
         let end = (start + viewport_height).min(self.buffer.len_lines());

@@ -110,7 +110,7 @@ fn walk_and_highlight(
     }
 }
 
-fn style_for_node(kind: &str) -> Option<Style> {
+pub fn style_for_node(kind: &str) -> Option<Style> {
     match kind {
         // Headings
         "atx_heading" | "setext_heading" => {

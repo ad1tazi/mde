@@ -191,6 +191,20 @@ impl Buffer {
         self.rope.line_to_byte(line_idx)
     }
 
+    /// Extract text for a byte range as a String.
+    pub fn text_for_byte_range(&self, start_byte: usize, end_byte: usize) -> String {
+        let start_char = self.rope.byte_to_char(start_byte);
+        let end_char = self.rope.byte_to_char(end_byte);
+        self.rope.slice(start_char..end_char).to_string()
+    }
+
+    /// Count chars in a byte range.
+    pub fn char_count_for_byte_range(&self, start_byte: usize, end_byte: usize) -> usize {
+        let start_char = self.rope.byte_to_char(start_byte);
+        let end_char = self.rope.byte_to_char(end_byte);
+        end_char - start_char
+    }
+
     // --- File I/O ---
 
     pub fn save_to_file(&self, path: &Path) -> std::io::Result<()> {

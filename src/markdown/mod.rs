@@ -1,4 +1,5 @@
 pub mod highlight;
+pub mod reveal;
 
 use tree_sitter::{InputEdit, Point};
 use tree_sitter_md::{MarkdownParser, MarkdownTree};
