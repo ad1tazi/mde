@@ -1,9 +1,12 @@
 mod app;
 mod clipboard;
 mod editor;
+mod filetree;
+mod finder;
 mod input;
 mod markdown;
 mod render;
+mod sidebar;
 
 use app::App;
 

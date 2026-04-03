@@ -7,6 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
+use crate::app::TabEntry;
 use crate::editor::Editor;
 use crate::render::header_image::HeaderImageSupport;
 use crate::render::plan::RenderLine;
@@ -243,4 +244,55 @@ pub fn render_status_bar(editor: &Editor, area: Rect, buf: &mut RatatuiBuffer) {
     ]);
 
     buf.set_line(area.x, area.y, &status_line, area.width);
+}
+
+pub fn render_tab_bar(
+    tabs: &[TabEntry],
+    active_tab: usize,
+    area: Rect,
+    buf: &mut RatatuiBuffer,
+) {
+    let bg_style = Style::default().bg(Color::Indexed(235)).fg(Color::White);
+
+    // Fill background
+    let blank = " ".repeat(area.width as usize);
+    buf.set_string(area.x, area.y, &blank, bg_style);
+
+    let mut x = area.x;
+    for (i, tab) in tabs.iter().enumerate() {
+        let filename = tab
+            .editor
+            .file_path
+            .as_ref()
+            .map(|p| {
+                p.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_else(|| "[untitled]".into());
+
+        let dirty = if tab.editor.dirty { " ●" } else { "" };
+        let label = format!(" {}{} ", filename, dirty);
+
+        let style = if i == active_tab {
+            Style::default().bg(Color::Indexed(238)).fg(Color::White)
+        } else {
+            Style::default().bg(Color::Indexed(235)).fg(Color::Indexed(245))
+        };
+
+        let label_len = label.len() as u16;
+        if x + label_len > area.x + area.width {
+            break;
+        }
+
+        buf.set_string(x, area.y, &label, style);
+        x += label_len;
+
+        // Separator
+        if x < area.x + area.width {
+            buf.set_string(x, area.y, "│", bg_style);
+            x += 1;
+        }
+    }
 }

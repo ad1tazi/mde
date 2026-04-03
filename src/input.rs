@@ -24,6 +24,46 @@ pub enum EditorCommand {
     Quit,
 }
 
+/// App-level commands intercepted before editor dispatch.
+#[derive(Debug)]
+pub enum AppCommand {
+    ToggleSidebar,
+    OpenFinder,
+    NextTab,
+    PrevTab,
+    CloseTab,
+    Quit,
+    Save,
+    Editor(EditorCommand),
+}
+
+/// Try to map a key event to an app-level command first, then fall back to editor command.
+pub fn map_app_key_event(event: KeyEvent) -> Option<AppCommand> {
+    if event.kind != KeyEventKind::Press {
+        return None;
+    }
+
+    let ctrl = event.modifiers.contains(KeyModifiers::CONTROL);
+    let shift = event.modifiers.contains(KeyModifiers::SHIFT);
+
+    // App-level commands (intercepted before editor)
+    match (event.code, ctrl, shift) {
+        (KeyCode::Char('b'), true, false) => return Some(AppCommand::ToggleSidebar),
+        (KeyCode::Char('p'), true, false) => return Some(AppCommand::OpenFinder),
+        (KeyCode::Char('w'), true, false) => return Some(AppCommand::CloseTab),
+        (KeyCode::Char('q'), true, false) => return Some(AppCommand::Quit),
+        (KeyCode::Char('s'), true, false) => return Some(AppCommand::Save),
+        // Tab switching: Ctrl+PageDown/PageUp (Ctrl+Tab unreliable in some terminals)
+        (KeyCode::PageDown, true, false) => return Some(AppCommand::NextTab),
+        (KeyCode::PageUp, true, false) => return Some(AppCommand::PrevTab),
+        (KeyCode::BackTab, true, _) => return Some(AppCommand::PrevTab),
+        _ => {}
+    }
+
+    // Fall through to editor command
+    map_key_event(event).map(AppCommand::Editor)
+}
+
 pub fn map_key_event(event: KeyEvent) -> Option<EditorCommand> {
     if event.kind != KeyEventKind::Press {
         return None;
