@@ -29,6 +29,8 @@ pub enum EditorCommand {
 pub enum AppCommand {
     ToggleSidebar,
     OpenFinder,
+    ToggleHelp,
+    CreateFile,
     NextTab,
     PrevTab,
     CloseTab,
@@ -50,6 +52,8 @@ pub fn map_app_key_event(event: KeyEvent) -> Option<AppCommand> {
     match (event.code, ctrl, shift) {
         (KeyCode::Char('b'), true, false) => return Some(AppCommand::ToggleSidebar),
         (KeyCode::Char('p'), true, false) => return Some(AppCommand::OpenFinder),
+        (KeyCode::Char('h'), true, false) => return Some(AppCommand::ToggleHelp),
+        (KeyCode::Char('n'), true, false) => return Some(AppCommand::CreateFile),
         (KeyCode::Char('w'), true, false) => return Some(AppCommand::CloseTab),
         (KeyCode::Char('q'), true, false) => return Some(AppCommand::Quit),
         (KeyCode::Char('s'), true, false) => return Some(AppCommand::Save),

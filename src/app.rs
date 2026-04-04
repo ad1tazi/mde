@@ -34,6 +34,8 @@ pub enum FocusZone {
     Editor,
     Sidebar,
     Finder,
+    Help,
+    NewFilePrompt,
 }
 
 pub struct App {
@@ -48,6 +50,7 @@ pub struct App {
     pub sidebar_width: u16,
     pub focus: FocusZone,
     pub finder: Option<FinderState>,
+    pub new_file_input: String,
 }
 
 impl App {
@@ -77,6 +80,7 @@ impl App {
             sidebar_width: 25,
             focus: FocusZone::Editor,
             finder: None,
+            new_file_input: String::new(),
         })
     }
 
@@ -168,7 +172,9 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> std::io::Result<()> {
         match self.focus {
+            FocusZone::Help => self.handle_help_key(key_event),
             FocusZone::Finder => self.handle_finder_key(key_event),
+            FocusZone::NewFilePrompt => self.handle_new_file_key(key_event),
             FocusZone::Sidebar => self.handle_sidebar_key(key_event),
             FocusZone::Editor => self.handle_editor_key(key_event),
         }
@@ -186,11 +192,18 @@ impl App {
                         self.focus = FocusZone::Sidebar;
                     }
                 }
+                AppCommand::ToggleHelp => {
+                    self.focus = FocusZone::Help;
+                }
                 AppCommand::OpenFinder => {
                     let cwd =
                         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                     self.finder = Some(FinderState::new(&cwd));
                     self.focus = FocusZone::Finder;
+                }
+                AppCommand::CreateFile => {
+                    self.new_file_input.clear();
+                    self.focus = FocusZone::NewFilePrompt;
                 }
                 AppCommand::NextTab => self.next_tab(),
                 AppCommand::PrevTab => self.prev_tab(),
@@ -230,6 +243,9 @@ impl App {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 self.finder = Some(FinderState::new(&cwd));
                 self.focus = FocusZone::Finder;
+            }
+            (KeyCode::Char('h'), true) => {
+                self.focus = FocusZone::Help;
             }
             (KeyCode::Up, _) => {
                 if let Some(ref mut sidebar) = self.sidebar {
@@ -347,6 +363,73 @@ impl App {
                 if let Some(ref mut finder) = self.finder {
                     finder.insert_char(c);
                 }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_help_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+    ) -> std::io::Result<()> {
+        if key_event.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+        let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
+        match (key_event.code, ctrl) {
+            (KeyCode::Esc, _) | (KeyCode::Char('h'), true) => {
+                self.focus = FocusZone::Editor;
+            }
+            (KeyCode::Char('q'), true) => {
+                self.should_quit = true;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_new_file_key(
+        &mut self,
+        key_event: crossterm::event::KeyEvent,
+    ) -> std::io::Result<()> {
+        if key_event.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+
+        let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
+
+        match (key_event.code, ctrl) {
+            (KeyCode::Esc, _) => {
+                self.focus = FocusZone::Editor;
+            }
+            (KeyCode::Char('q'), true) => {
+                self.should_quit = true;
+            }
+            (KeyCode::Enter, _) => {
+                let name = self.new_file_input.trim().to_string();
+                if !name.is_empty() {
+                    let cwd =
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    let path = cwd.join(&name);
+                    // Create the file (empty) if it doesn't exist
+                    if !path.exists() {
+                        if let Some(parent) = path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(&path, "")?;
+                    }
+                    self.open_file_in_tab(&path)?;
+                    // Refresh sidebar
+                    self.sidebar = Some(SidebarState::new(&cwd));
+                }
+                self.focus = FocusZone::Editor;
+            }
+            (KeyCode::Backspace, _) => {
+                self.new_file_input.pop();
+            }
+            (KeyCode::Char(c), false) => {
+                self.new_file_input.push(c);
             }
             _ => {}
         }
@@ -597,6 +680,18 @@ impl App {
                     y: cursor_y,
                 });
             }
+        } else if self.focus == FocusZone::NewFilePrompt {
+            let popup_area = frame.area();
+            let width = 42u16.min(popup_area.width);
+            let x = popup_area.x + (popup_area.width.saturating_sub(width)) / 2;
+            let y = popup_area.y + (popup_area.height.saturating_sub(3)) / 3;
+            // Cursor after " > " + input
+            let cursor_x = x + 1 + 3 + self.new_file_input.len() as u16;
+            let cursor_y = y + 1;
+            frame.set_cursor_position(Position {
+                x: cursor_x.min(x + width - 2),
+                y: cursor_y,
+            });
         }
 
         // Render finder overlay (last, on top of everything)
@@ -604,5 +699,194 @@ impl App {
             let widget = FinderWidget { state: finder };
             frame.render_widget(widget, full_area);
         }
+
+        // Render new file prompt overlay
+        if self.focus == FocusZone::NewFilePrompt {
+            render_new_file_overlay(&self.new_file_input, full_area, frame.buffer_mut());
+        }
+
+        // Render help overlay
+        if self.focus == FocusZone::Help {
+            render_help_overlay(full_area, frame.buffer_mut());
+        }
+    }
+}
+
+fn render_new_file_overlay(
+    input: &str,
+    area: ratatui::layout::Rect,
+    buf: &mut ratatui::buffer::Buffer,
+) {
+    use ratatui::style::{Color, Modifier, Style};
+
+    let width = 42u16.min(area.width);
+    let height = 3u16.min(area.height);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 3;
+
+    let border_style = Style::default().fg(Color::Indexed(245)).bg(Color::Indexed(235));
+    let bg_style = Style::default().bg(Color::Indexed(235)).fg(Color::White);
+    let label_style = Style::default()
+        .bg(Color::Indexed(235))
+        .fg(Color::Indexed(117))
+        .add_modifier(Modifier::BOLD);
+
+    // Draw border + background
+    for row in 0..height {
+        let cy = y + row;
+        if cy >= area.y + area.height {
+            break;
+        }
+        for col in 0..width {
+            let cx = x + col;
+            if cx >= area.x + area.width {
+                break;
+            }
+            let ch = if row == 0 && col == 0 {
+                "╭"
+            } else if row == 0 && col == width - 1 {
+                "╮"
+            } else if row == height - 1 && col == 0 {
+                "╰"
+            } else if row == height - 1 && col == width - 1 {
+                "╯"
+            } else if row == 0 || row == height - 1 {
+                "─"
+            } else if col == 0 || col == width - 1 {
+                "│"
+            } else {
+                " "
+            };
+            let style = if col == 0 || col == width - 1 || row == 0 || row == height - 1 {
+                border_style
+            } else {
+                bg_style
+            };
+            buf.set_string(cx, cy, ch, style);
+        }
+    }
+
+    // Title
+    let title = " New File ";
+    let title_x = x + (width.saturating_sub(title.len() as u16)) / 2;
+    buf.set_string(title_x, y, title, label_style);
+
+    // Input line: " > {input}"
+    let content_x = x + 1;
+    let content_y = y + 1;
+    let inner_w = width.saturating_sub(2) as usize;
+    buf.set_string(content_x, content_y, " > ", label_style);
+    let max_input = inner_w.saturating_sub(3);
+    let visible_input = if input.len() > max_input {
+        &input[input.len() - max_input..]
+    } else {
+        input
+    };
+    buf.set_string(content_x + 3, content_y, visible_input, bg_style);
+}
+
+fn render_help_overlay(area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
+    use ratatui::style::{Color, Modifier, Style};
+    use ratatui::text::{Line, Span};
+
+    let shortcuts: &[(&str, &str)] = &[
+        ("Ctrl+H", "Toggle this help"),
+        ("Ctrl+S", "Save file"),
+        ("Ctrl+Q", "Quit"),
+        ("Ctrl+Z", "Undo"),
+        ("Ctrl+Shift+Z / Ctrl+Y", "Redo"),
+        ("Ctrl+C / X / V", "Copy / Cut / Paste"),
+        ("Ctrl+A", "Select all"),
+        ("Ctrl+B", "Toggle sidebar"),
+        ("Ctrl+N", "New file"),
+        ("Ctrl+P", "Fuzzy file finder"),
+        ("Ctrl+W", "Close tab"),
+        ("Ctrl+PageDown/Up", "Next / Prev tab"),
+        ("Ctrl+Left/Right", "Move word left/right"),
+        ("Home / End", "Start / End of line"),
+        ("Shift+Arrow", "Extend selection"),
+    ];
+
+    let content_width: u16 = 44;
+    let content_height = shortcuts.len() as u16 + 4; // title + blank + items + footer
+    let width = content_width + 4; // borders + padding
+    let height = content_height + 2; // borders
+
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 3;
+
+    let border_style = Style::default().fg(Color::Indexed(245)).bg(Color::Indexed(235));
+    let bg_style = Style::default().bg(Color::Indexed(235)).fg(Color::White);
+    let key_style = Style::default()
+        .bg(Color::Indexed(235))
+        .fg(Color::Indexed(117))
+        .add_modifier(Modifier::BOLD);
+    let dim_style = Style::default().bg(Color::Indexed(235)).fg(Color::Indexed(245));
+
+    let inner_w = width.saturating_sub(2) as usize;
+
+    // Draw border + background
+    for row in 0..height {
+        let cy = y + row;
+        if cy >= area.y + area.height {
+            break;
+        }
+        for col in 0..width {
+            let cx = x + col;
+            if cx >= area.x + area.width {
+                break;
+            }
+            let ch = if row == 0 && col == 0 {
+                "╭"
+            } else if row == 0 && col == width - 1 {
+                "╮"
+            } else if row == height - 1 && col == 0 {
+                "╰"
+            } else if row == height - 1 && col == width - 1 {
+                "╯"
+            } else if row == 0 || row == height - 1 {
+                "─"
+            } else if col == 0 || col == width - 1 {
+                "│"
+            } else {
+                " "
+            };
+            let style = if col == 0 || col == width - 1 || row == 0 || row == height - 1 {
+                border_style
+            } else {
+                bg_style
+            };
+            buf.set_string(cx, cy, ch, style);
+        }
+    }
+
+    // Title
+    let title = " Keyboard Shortcuts ";
+    let title_x = x + (width.saturating_sub(title.len() as u16)) / 2;
+    buf.set_string(title_x, y, title, key_style);
+
+    // Shortcut entries
+    let content_x = x + 2;
+    let mut cy = y + 2;
+    for (key, desc) in shortcuts {
+        if cy >= y + height - 1 {
+            break;
+        }
+        let line = Line::from(vec![
+            Span::styled(format!("{:<24}", key), key_style),
+            Span::styled(*desc, bg_style),
+        ]);
+        buf.set_line(content_x, cy, &line, inner_w as u16);
+        cy += 1;
+    }
+
+    // Footer
+    cy += 1;
+    if cy < y + height - 1 {
+        let footer = "Press Esc or Ctrl+H to close";
+        let footer_x = x + (width.saturating_sub(footer.len() as u16)) / 2;
+        buf.set_string(footer_x, cy, footer, dim_style);
     }
 }
