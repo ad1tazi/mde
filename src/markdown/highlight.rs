@@ -156,9 +156,7 @@ pub fn style_for_node(kind: &str) -> Option<Style> {
 
         // List markers
         "list_marker_minus" | "list_marker_plus" | "list_marker_star"
-        | "list_marker_dot" | "list_marker_parenthesis" => {
-            Some(Style::default().fg(Color::Yellow))
-        }
+        | "list_marker_dot" | "list_marker_parenthesis" => Some(Style::default().fg(Color::Black)),
 
         // Task list markers
         "task_list_marker_checked" => Some(Style::default().fg(Color::Green)),
