@@ -5,6 +5,7 @@ use crate::editor::buffer::Buffer;
 use crate::markdown::reveal::RevealSet;
 use crate::render::inline;
 use crate::render::plan::RenderSpan;
+use crate::theme;
 
 /// Render a list_item node.
 ///
@@ -93,7 +94,7 @@ pub fn render_list_item(
                     let cc = buffer.char_count_for_byte_range(child_start, child_end.min(line_end_byte));
                     spans.push(RenderSpan {
                         display_text: "• ".to_string(),
-                        style: Style::default().fg(Color::Black),
+                        style: Style::default().fg(theme::bullet_color()),
                         raw_byte_range: child_start..child_end.min(line_end_byte),
                         raw_char_count: cc,
                         is_decoration: false,
