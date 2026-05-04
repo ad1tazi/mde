@@ -2,6 +2,7 @@ use ratatui::style::{Color, Modifier, Style};
 
 use super::MarkdownState;
 use crate::editor::buffer::Buffer;
+use crate::theme;
 
 #[derive(Debug, Clone)]
 pub struct HighlightSpan {
@@ -116,18 +117,12 @@ pub fn style_for_node(kind: &str) -> Option<Style> {
         "atx_heading" | "setext_heading" => {
             Some(Style::default().add_modifier(Modifier::BOLD))
         }
-        "atx_h1_marker" => {
-            Some(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-        }
-        "atx_h2_marker" => {
-            Some(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))
-        }
-        "atx_h3_marker" => {
-            Some(Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))
-        }
-        "atx_h4_marker" | "atx_h5_marker" | "atx_h6_marker" => {
-            Some(Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        }
+        "atx_h1_marker" => Some(theme::heading_style(1)),
+        "atx_h2_marker" => Some(theme::heading_style(2)),
+        "atx_h3_marker" => Some(theme::heading_style(3)),
+        "atx_h4_marker" => Some(theme::heading_style(4)),
+        "atx_h5_marker" => Some(theme::heading_style(5)),
+        "atx_h6_marker" => Some(theme::heading_style(6)),
         "setext_h1_underline" | "setext_h2_underline" => {
             Some(Style::default().fg(Color::DarkGray))
         }
@@ -156,7 +151,9 @@ pub fn style_for_node(kind: &str) -> Option<Style> {
 
         // List markers
         "list_marker_minus" | "list_marker_plus" | "list_marker_star"
-        | "list_marker_dot" | "list_marker_parenthesis" => Some(Style::default().fg(Color::Black)),
+        | "list_marker_dot" | "list_marker_parenthesis" => {
+            Some(Style::default().fg(theme::bullet_color()))
+        }
 
         // Task list markers
         "task_list_marker_checked" => Some(Style::default().fg(Color::Green)),

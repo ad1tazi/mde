@@ -5,6 +5,7 @@ use crate::editor::buffer::Buffer;
 use crate::markdown::reveal::RevealSet;
 use crate::render::inline;
 use crate::render::plan::RenderSpan;
+use crate::theme;
 
 /// Metadata extracted from heading rendering.
 pub struct HeadingMeta {
@@ -85,65 +86,21 @@ pub fn render_atx_heading(
         }
 
         match child_kind {
-            "atx_h1_marker" => {
-                tier = 1;
-                heading_style = Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD);
-                // Hide the marker and the space after it
-                let hide_end = child_end.min(line_end_byte);
-                spans.push(hidden_span(byte_pos, hide_end, buffer));
-                byte_pos = hide_end;
-                // Also hide the space between marker and content
-                if byte_pos < line_end_byte {
-                    let next_byte = buffer.text_for_byte_range(byte_pos, (byte_pos + 1).min(line_end_byte));
-                    if next_byte == " " {
-                        spans.push(hidden_span(byte_pos, byte_pos + 1, buffer));
-                        byte_pos += 1;
-                    }
-                }
-            }
-            "atx_h2_marker" => {
-                tier = 2;
-                heading_style = Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD);
-                let hide_end = child_end.min(line_end_byte);
-                spans.push(hidden_span(byte_pos, hide_end, buffer));
-                byte_pos = hide_end;
-                if byte_pos < line_end_byte {
-                    let next_byte = buffer.text_for_byte_range(byte_pos, (byte_pos + 1).min(line_end_byte));
-                    if next_byte == " " {
-                        spans.push(hidden_span(byte_pos, byte_pos + 1, buffer));
-                        byte_pos += 1;
-                    }
-                }
-            }
-            "atx_h3_marker" => {
-                tier = 3;
-                heading_style = Style::default()
-                    .fg(Color::Magenta)
-                    .add_modifier(Modifier::BOLD);
-                let hide_end = child_end.min(line_end_byte);
-                spans.push(hidden_span(byte_pos, hide_end, buffer));
-                byte_pos = hide_end;
-                if byte_pos < line_end_byte {
-                    let next_byte = buffer.text_for_byte_range(byte_pos, (byte_pos + 1).min(line_end_byte));
-                    if next_byte == " " {
-                        spans.push(hidden_span(byte_pos, byte_pos + 1, buffer));
-                        byte_pos += 1;
-                    }
-                }
-            }
-            "atx_h4_marker" | "atx_h5_marker" | "atx_h6_marker" => {
+            "atx_h1_marker"
+            | "atx_h2_marker"
+            | "atx_h3_marker"
+            | "atx_h4_marker"
+            | "atx_h5_marker"
+            | "atx_h6_marker" => {
                 tier = match child_kind {
+                    "atx_h1_marker" => 1,
+                    "atx_h2_marker" => 2,
+                    "atx_h3_marker" => 3,
                     "atx_h4_marker" => 4,
                     "atx_h5_marker" => 5,
                     _ => 6,
                 };
-                heading_style = Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD);
+                heading_style = theme::heading_style(tier);
                 let hide_end = child_end.min(line_end_byte);
                 spans.push(hidden_span(byte_pos, hide_end, buffer));
                 byte_pos = hide_end;

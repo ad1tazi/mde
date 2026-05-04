@@ -1244,6 +1244,7 @@ dependencies = [
  "crossterm 0.28.1",
  "ignore",
  "image",
+ "libc",
  "nucleo-matcher",
  "ratatui",
  "ratatui-image",
